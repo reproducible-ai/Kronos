@@ -12,6 +12,48 @@ setup:
     export PATH=/opt/pytorch/bin:$PATH
     python -m pip install --quiet requests || true
     rm -rf *.egg-info src/*.egg-info
+    # P0-7: purge every pre-baked roar first. Deleting only the .dist-info leaves an
+    # importable roar/ package dir behind, and a bare /usr/local/bin/roar has been
+    # caught importing it. Never pipe a destructive command into head.
+    sudo rm -rf /usr/local/lib/python3.10/dist-packages/roar_cli-*.dist-info \
+                /usr/local/lib/python3.10/dist-packages/roar \
+                /opt/pytorch/lib/python3.12/site-packages/roar_cli-*.dist-info \
+                /opt/pytorch/lib/python3.12/site-packages/roar \
+                /usr/local/bin/roar /usr/local/bin/roar-worker \
+                /opt/pytorch/bin/roar /opt/pytorch/bin/roar-worker \
+                /usr/local/lib/python3.10/dist-packages/roar_inject.pth \
+                /opt/pytorch/lib/python3.12/site-packages/roar_inject.pth
+    echo "--- P0-7 verification sweep (must be empty) ---"
+    find / -xdev \( -name 'roar_inject.pth' -o -name 'roar-worker' \) -print 2>/dev/null || true
+    echo "--- end sweep ---"
+    # Build identity. TestPyPI files are immutable, so the published digest of the
+    # linux x86_64 wheel IS the build identity recorded for this row.
+    python3 -c "
+    import json, urllib.request
+    d = json.load(urllib.request.urlopen('https://test.pypi.org/pypi/roar-cli/0.4.4rc6/json'))
+    w = [u for u in d['urls'] if u['filename'].endswith('manylinux_2_34_x86_64.whl')][0]
+    print('WHEEL', w['filename'], w['digests']['sha256'])
+    assert w['digests']['sha256'] == 'c7115b748886259b6a089e547404376acf84c3b81b4cbc8dc5610490ebea7199', 'WHEEL DIGEST MISMATCH'
+    "
+    # P0-20 retired: install the PUBLISHED build from the index -- no presigned URL,
+    # no per-target ROAR_WHEEL_URL secret, so no cross-agent contention.
+    # --index-strategy unsafe-best-match: uv gives --extra-index-url first-match
+    # priority otherwise and never sees the rc.
+    # --python 3.12.10 (P0-14) so roar's interpreter == the recorded child's.
+    # --with huggingface-hub (P0-19) so `roar put ... hf://` cannot die after the
+    # traced steps have already succeeded.
+    uv tool install --python 3.12.10 --force --with huggingface-hub \
+      --index-url https://test.pypi.org/simple/ \
+      --extra-index-url https://pypi.org/simple \
+      --index-strategy unsafe-best-match \
+      roar-cli==0.4.4rc6
+    # P0-17: the treqs agent shells out to a bare `roar` after the run, without this
+    # stage's PATH.
+    sudo ln -sf /root/.local/bin/roar /usr/local/bin/roar
+    test "$(roar --version | grep -o '[0-9][^ ]*$')" = "0.4.4rc6" || \
+      { echo "WRONG ROAR: $(roar --version)"; exit 1; }
+    test "$(ls $(dirname $(readlink -f $(command -v roar)))/../lib/python*/site-packages/roar/bin | wc -l)" -ge 6 || \
+      { echo "NO TRACER BINARIES"; exit 1; }
     roar --version
     roar tracer use preload
     roar tracer
