@@ -21,7 +21,25 @@ secrets:
 setup:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
+    python -V
     python -m pip install --quiet requests || true
+    # Upstream's own install step: README "Installation" says exactly this.
+    # It matters: the AMI ships huggingface_hub but NOT safetensors, and
+    # huggingface_hub's PyTorchModelHubMixin references safetensors.__version__
+    # inside _load_as_safetensor without having imported it, so a missing
+    # safetensors surfaces as `NameError: name 'safetensors' is not defined`
+    # from hub_mixin.py:813 rather than a readable ImportError.
+    python -m pip install --quiet -r requirements.txt \
+      || sudo "$(command -v python)" -m pip install --quiet -r requirements.txt
+    # Kronos's requirements.txt omits PyYAML even though
+    # finetune_csv/config_loader.py imports it; assert every direct import of the
+    # recipe is importable before anything is paid for.
+    python -c "import torch, numpy, pandas, yaml, einops, safetensors, huggingface_hub; print('deps ok:', torch.__version__, numpy.__version__, pandas.__version__, safetensors.__version__, huggingface_hub.__version__)"
+    # Trap: a local-version pin (torch==2.7.0+cu128) is absent from PyPI and would
+    # make the row unrebuildable. Print any, so the record shows the check ran.
+    echo "--- local-version pins (must be empty) ---"
+    python -m pip list --format=freeze | grep '+' || true
+    echo "--- end local-version check ---"
     rm -rf *.egg-info src/*.egg-info
     # P0-7: purge every pre-baked roar first. Deleting only the .dist-info leaves an
     # importable roar/ package dir behind, and a bare /usr/local/bin/roar has been
