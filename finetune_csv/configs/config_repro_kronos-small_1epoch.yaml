@@ -4,8 +4,11 @@
 # `configs/config_ali09988_candle-5min.yaml`; only the following differ, and each
 # difference is deliberate:
 #
-#   * every path is REPO-RELATIVE (the template ships `/xxxx/...` placeholders that
-#     cannot run anywhere). Commands are executed from the repository root.
+#   * every path is relative to `finetune_csv/` (the template ships `/xxxx/...`
+#     placeholders that cannot run anywhere). `finetune_csv/` is the working
+#     directory upstream's own README assumes -- `train_sequential.py` does
+#     `sys.path.append('../')` to find the `model` package, which only resolves
+#     from there.
 #   * pretrained_predictor is Kronos-small (24.7M) rather than Kronos-base (102.3M):
 #     Kronos-small is the checkpoint upstream's own README quickstart and
 #     tests/test_kronos_regression.py use, it shares the 512-token context of
@@ -18,7 +21,7 @@
 #   * seed 42 is upstream's template value, unchanged.
 
 data:
-  data_path: "finetune_csv/data/HK_ali_09988_kline_5min_all.csv"
+  data_path: "data/HK_ali_09988_kline_5min_all.csv"
   lookback_window: 512
   predict_window: 48
   max_context: 512
@@ -49,13 +52,13 @@ training:
   # gradient accumulation steps for tokenizer training
   accumulation_steps: 1
 
-# model path configuration (repo-relative; populated by repro/fetch_pretrained.py)
+# model path configuration (relative to finetune_csv/; populated by repro/fetch_pretrained.py)
 model_paths:
-  pretrained_tokenizer: "pretrained/Kronos-Tokenizer-base"
-  pretrained_predictor: "pretrained/Kronos-small"
+  pretrained_tokenizer: "../pretrained/Kronos-Tokenizer-base"
+  pretrained_predictor: "../pretrained/Kronos-small"
 
   exp_name: "HK_ali_09988_kline_5min_all"
-  base_path: "finetune_csv/finetuned"
+  base_path: "finetuned"
 
   # generated from base_path + exp_name by config_loader.ConfigLoader
   base_save_path: ""

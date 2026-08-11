@@ -54,6 +54,9 @@ setup:
       { echo "WRONG ROAR: $(roar --version)"; exit 1; }
     test "$(ls $(dirname $(readlink -f $(command -v roar)))/../lib/python*/site-packages/roar/bin | wc -l)" -ge 6 || \
       { echo "NO TRACER BINARIES"; exit 1; }
+    # `env -C` (coreutils >= 8.28) carries the working directory INSIDE the
+    # recorded argv. Fail here rather than after the paid steps.
+    env -C . true || { echo "env -C unsupported: $(env --version | head -1)"; exit 1; }
     roar --version
     roar tracer use preload
     roar tracer
@@ -71,14 +74,14 @@ finetune_tokenizer:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n finetune_tokenizer --wandb-to-trackio -- env PYTHONPATH=. python finetune_csv/train_sequential.py --config finetune_csv/configs/config_repro_kronos-small_1epoch.yaml --skip-basemodel
+    roar run -n finetune_tokenizer --wandb-to-trackio -- env -C finetune_csv python train_sequential.py --config configs/config_repro_kronos-small_1epoch.yaml --skip-basemodel
   trace: off
 
 finetune_predictor:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n finetune_predictor --wandb-to-trackio -- env PYTHONPATH=. python finetune_csv/train_sequential.py --config finetune_csv/configs/config_repro_kronos-small_1epoch.yaml --skip-tokenizer
+    roar run -n finetune_predictor --wandb-to-trackio -- env -C finetune_csv python train_sequential.py --config configs/config_repro_kronos-small_1epoch.yaml --skip-tokenizer
   trace: off
 
 label:
