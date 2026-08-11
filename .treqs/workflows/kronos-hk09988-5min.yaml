@@ -35,10 +35,33 @@ setup:
     # finetune_csv/config_loader.py imports it; assert every direct import of the
     # recipe is importable before anything is paid for.
     python -c "import torch, numpy, pandas, yaml, einops, safetensors, huggingface_hub; print('deps ok:', torch.__version__, numpy.__version__, pandas.__version__, safetensors.__version__, huggingface_hub.__version__)"
-    # Trap: a local-version pin (torch==2.7.0+cu128) is absent from PyPI and would
-    # make the row unrebuildable. Print any, so the record shows the check ran.
+    # Trap: a local-version pin (torch==2.3.0+cu121) is absent from PyPI, so a
+    # freeze containing one can never be rebuilt. This target's AMI normally ships
+    # a plain torch, but on-demand instances are REUSED warm between jobs and a
+    # previous job's setup can leave a +cuNNN build behind -- observed on this row.
+    # `pip list` cannot be used to detect it: on this image it returns an EMPTY
+    # list, so the check silently passes. Read importlib.metadata instead, and
+    # repair with the plain PyPI build if anything is found.
     echo "--- local-version pins (must be empty) ---"
-    python -m pip list --format=freeze | grep '+' || true
+    python -c "
+    import sys
+    from importlib.metadata import distributions
+    bad = sorted((d.metadata['Name'] or '?') + '==' + (d.version or '') for d in distributions() if '+' in (d.version or ''))
+    print('LOCAL-VERSION PINS:', bad or 'none')
+    sys.exit(1 if bad else 0)
+    " || {
+      echo 'REPAIRING: reinstalling plain torch from PyPI'
+      python -m pip install --quiet "torch==2.7.0" \
+        || sudo "$(command -v python)" -m pip install --quiet "torch==2.7.0"
+    }
+    python -c "
+    import sys, torch
+    from importlib.metadata import distributions
+    bad = sorted((d.metadata['Name'] or '?') + '==' + (d.version or '') for d in distributions() if '+' in (d.version or ''))
+    print('torch', torch.__version__, '| cuda', torch.cuda.is_available(), '| local-version pins', bad or 'none')
+    assert not bad, 'LOCAL-VERSION PIN PRESENT -- this row could never be rebuilt'
+    assert torch.cuda.is_available(), 'no CUDA device'
+    "
     echo "--- end local-version check ---"
     rm -rf *.egg-info src/*.egg-info
     # P0-7: purge every pre-baked roar first. Deleting only the .dist-info leaves an
