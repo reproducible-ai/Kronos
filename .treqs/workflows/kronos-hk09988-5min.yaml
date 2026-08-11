@@ -4,8 +4,19 @@ name: kronos-hk09988-5min reproduction
 # `roar run -n <name>` (trace:off, same-ABI); outputs live in git-tracked dirs
 # (.gitkeep) with files gitignored; publish --no-tag. Adjust commands as needed.
 
+# NOTE (hand edit to the generated file): the scaffold puts `--wandb-to-trackio`
+# and TRACKIO_SPACE_ID on every run stage. Both are removed here. Kronos ships NO
+# wandb, mlflow, trackio or tensorboard integration anywhere in the repository --
+# grep over every file finds none -- so the bridge has nothing to forward. It is
+# not merely inert either: roar's sitecustomize attempts `import trackio` in every
+# traced process, and that attempt alone has been enough to attribute trackio and
+# gradio_client into a recorded freeze. The only logging upstream ships is Comet,
+# and only in the OTHER pipeline (finetune/train_predictor.py:12, :200 and
+# finetune/train_tokenizer.py:15, :238), which trains from Qlib data rather than
+# CSV; Comet is not bridged and needs an API key. See the row notes.
+
 secrets:
-  - HF_TOKEN            # wandb->trackio sync + roar put upload
+  - HF_TOKEN            # roar put upload
 
 setup:
   command: |
@@ -42,14 +53,25 @@ setup:
     # --python 3.12.10 (P0-14) so roar's interpreter == the recorded child's.
     # --with huggingface-hub (P0-19) so `roar put ... hf://` cannot die after the
     # traced steps have already succeeded.
+    # `uv` is NOT on PATH on this AMI. Look in the usual per-user bin dirs first,
+    # and bootstrap it only if it genuinely is not installed.
+    echo "user=$(id -un) home=$HOME"
+    command -v uv >/dev/null || export PATH="$HOME/.local/bin:/root/.local/bin:/usr/local/bin:$PATH"
+    command -v uv >/dev/null || { curl -LsSf https://astral.sh/uv/install.sh | sh; export PATH="$HOME/.local/bin:$PATH"; }
+    uv --version
     uv tool install --python 3.12.10 --force --with huggingface-hub \
       --index-url https://test.pypi.org/simple/ \
-      --extra-index-url https://pypi.org/simple \
+      --extra-index-url https://pypi.org/simple/ \
       --index-strategy unsafe-best-match \
       roar-cli==0.4.4rc6
     # P0-17: the treqs agent shells out to a bare `roar` after the run, without this
-    # stage's PATH.
-    sudo ln -sf /root/.local/bin/roar /usr/local/bin/roar
+    # stage's PATH, so the executable has to exist at /usr/local/bin/roar.
+    ROAR_BIN="$(command -v roar || true)"
+    test -n "$ROAR_BIN" || ROAR_BIN="$HOME/.local/bin/roar"
+    test -x "$ROAR_BIN" || ROAR_BIN=/root/.local/bin/roar
+    echo "roar installed at $ROAR_BIN"
+    sudo ln -sf "$ROAR_BIN" /usr/local/bin/roar
+    hash -r
     test "$(roar --version | grep -o '[0-9][^ ]*$')" = "0.4.4rc6" || \
       { echo "WRONG ROAR: $(roar --version)"; exit 1; }
     test "$(ls $(dirname $(readlink -f $(command -v roar)))/../lib/python*/site-packages/roar/bin | wc -l)" -ge 6 || \
@@ -66,22 +88,22 @@ setup:
 fetch_pretrained:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
-    export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n fetch_pretrained --wandb-to-trackio -- python repro/fetch_pretrained.py
+    export PYTHONUNBUFFERED=1
+    roar run -n fetch_pretrained -- python repro/fetch_pretrained.py
   trace: off
 
 finetune_tokenizer:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
-    export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n finetune_tokenizer --wandb-to-trackio -- env -C finetune_csv python train_sequential.py --config configs/config_repro_kronos-small_1epoch.yaml --skip-basemodel
+    export PYTHONUNBUFFERED=1
+    roar run -n finetune_tokenizer -- env -C finetune_csv python train_sequential.py --config configs/config_repro_kronos-small_1epoch.yaml --skip-basemodel
   trace: off
 
 finetune_predictor:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
-    export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n finetune_predictor --wandb-to-trackio -- env -C finetune_csv python train_sequential.py --config configs/config_repro_kronos-small_1epoch.yaml --skip-tokenizer
+    export PYTHONUNBUFFERED=1
+    roar run -n finetune_predictor -- env -C finetune_csv python train_sequential.py --config configs/config_repro_kronos-small_1epoch.yaml --skip-tokenizer
   trace: off
 
 label:
