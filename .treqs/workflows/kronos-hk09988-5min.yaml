@@ -71,14 +71,14 @@ finetune_tokenizer:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n finetune_tokenizer --wandb-to-trackio -- env PYTHONPATH=. python finetune_csv/finetune_tokenizer.py --config finetune_csv/configs/config_repro_kronos-small_1epoch.yaml
+    roar run -n finetune_tokenizer --wandb-to-trackio -- env PYTHONPATH=. python finetune_csv/train_sequential.py --config finetune_csv/configs/config_repro_kronos-small_1epoch.yaml --skip-basemodel
   trace: off
 
 finetune_predictor:
   command: |
     export PATH=/opt/pytorch/bin:$PATH
     export TRACKIO_SPACE_ID=reproducible-ai/experiments PYTHONUNBUFFERED=1
-    roar run -n finetune_predictor --wandb-to-trackio -- env PYTHONPATH=. python finetune_csv/finetune_base_model.py --config finetune_csv/configs/config_repro_kronos-small_1epoch.yaml
+    roar run -n finetune_predictor --wandb-to-trackio -- env PYTHONPATH=. python finetune_csv/train_sequential.py --config finetune_csv/configs/config_repro_kronos-small_1epoch.yaml --skip-tokenizer
   trace: off
 
 label:
